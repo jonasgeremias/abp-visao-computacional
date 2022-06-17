@@ -1,0 +1,57 @@
+html {
+    min-width: 350px !important;
+    font-size: 12px;
+    width: 100%;
+}
+
+.navbar-brand {
+    padding: 5px;
+}
+
+footer p {
+    font-weight: bold
+}
+
+table {
+    width: max-content;
+    white-space: nowrap;
+}
+
+td {
+    padding: 2px 3px !important;
+}
+
+@keyframes blink {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+.blink {
+    -webkit-animation: blink 1s linear infinite;
+    -moz-animation: blink 1s linear infinite;
+    -ms-animation: blink 1s linear infinite;
+    -o-animation: blink 1s linear infinite;
+    animation: blink 1s linear infinite;
+}
+
+/* #image_piso {
+    height: 100%;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+}
+
+#operacao_props{
+    background-color: rgba(255, 255, 255, 0);
+    position: absolute;
+    width: 100%;
+} */

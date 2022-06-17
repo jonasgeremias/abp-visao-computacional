@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="s-m s-p">
+    <h1 class="text-center">{% block title %} QR Code 3D {% endblock %}</h1>
+    <div class='row'>
+        <div class="col-sm-12 col-lg-6">
+            <img id="bg2" src="{{ url_for('video_feed') }}" alt="frame" width="100%" style="max-width: 600px;">
+        </div>
+        <div class="col-sm-12 col-lg-6">
+            <img id="bg2" src="{{ url_for('video_feed_tratado') }}" alt="frame" width="100%" style="max-width: 600px;">
+        </div>
+    </div>
+</div>
+{% endblock %}

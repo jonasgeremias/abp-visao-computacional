@@ -8,9 +8,10 @@ from src.objloader_simple import  *
 
 # Iniciando a camera do hardware
 import hardware_api
-CAMERA_ADDR = 'http://192.168.1.198:8080/video'
+CAMERA_ADDR = 'http://192.168.1.198:4747/video'
+
 # Instanciando a camera do rapiberry ou o cv2
-hw_api = hardware_api.hardwareAPI(hardware_api.camerapi_ok, endereco=CAMERA_ADDR, width=800, height=600)
+hw_api = hardware_api.hardwareAPI(hardware_api.camerapi_ok, endereco=CAMERA_ADDR)
 
 ## Receber notificações da aplicação principal
 def verifica_notificacao(lock, app_queue):

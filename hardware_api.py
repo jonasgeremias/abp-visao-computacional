@@ -1,7 +1,9 @@
 import cv2
 import qrcode_detect
+import numpy as np
 
 IMG_MIRROR = False
+TEST_IMG = False
 
 ## Se for num raspberry Pi, inicia a camera
 camerapi_ok = 0
@@ -14,7 +16,7 @@ except Exception as e:
     print("erro: " + str(e))
 
 class hardwareAPI(object):
-  def __init__(self, habilita_picamera=0, endereco=0, width=1600, height=1200):
+  def __init__(self, habilita_picamera=0, endereco=0, width=1280, height=720):
     try:
       self.habilita_picamera = habilita_picamera
       self.frame_tratado = []
@@ -26,7 +28,12 @@ class hardwareAPI(object):
           self.camera.resolution = (height, width)
           print("picamera")
       else:
-          self.camera = cv2.VideoCapture(endereco)
+          if TEST_IMG == 0:
+            self.camera = cv2.VideoCapture(endereco)
+            self.camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M','J','P','G'))
+            self.camera.set(3, self.width)
+            self.camera.set(4, self.height)
+            self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
           print("cv2 link")
     finally:
         self.frame_tratado = self.get_frame()
@@ -45,10 +52,14 @@ class hardwareAPI(object):
         frame = self.rawCapture.array
         #ret, jpeg = cv2.imencode('.jpg', frame)
     else:
+      if TEST_IMG == 0:
+        # ret, frame = self.camera.read()
         ret, frame = self.camera.read()
-        # frame = cv2.imread('drive/181045/42.jpg')
-        frame = cv2.resize(frame, (self.height, self.width), interpolation = cv2.INTER_AREA)
-
+      else:
+        frame = cv2.imread('images\Exemplo_QR_code_1.jpeg')
+        
+        # frame = cv2.resize(frame, (400,600), interpolation = cv2.INTER_AREA)
+    frame = cv2.resize(frame, (self.height, self.width), interpolation = cv2.INTER_AREA)
     # Escolha qual o retorno
     # return jpeg.tobytes()
     return frame
@@ -56,7 +67,7 @@ class hardwareAPI(object):
     #atualiza o frame e converte para JPG
   def get_frame_jpeg(self, lock):
     lock.acquire()
-    ret, jpeg = cv2.imencode('.jpg', self.get_frame())
+    ret, jpeg = cv2.imencode('.jpeg', self.get_frame())
     frame = jpeg.tobytes()
     lock.release()
     return frame
@@ -64,7 +75,7 @@ class hardwareAPI(object):
   # Envia o frame com alterações
   def get_frame_tratado(self, lock):
     lock.acquire()
-    img = cv2.resize(self.frame_tratado, (self.width, self.height), interpolation = cv2.INTER_AREA)
+    img = cv2.resize(self.frame_tratado, (self.height, self.width), interpolation = cv2.INTER_AREA)
     ret, jpeg = cv2.imencode('.jpg', img)
     img = jpeg.tobytes()
     lock.release()
@@ -92,7 +103,8 @@ class hardwareAPI(object):
             
       # Busca o json com as configurações
       try:
-        image_preview = qrcode_detect.detect(image_preview)
+        # CAMERA_PARAMETERS = np.array([[1000, 0, self.width], [0, 1000, self.height], [0, 0, 1]])  # Camera parameters
+        image_preview = qrcode_detect.detect(image_preview) #, camera_parameters = CAMERA_PARAMETERS)
         # print('detect')
 
       except Exception as e:
