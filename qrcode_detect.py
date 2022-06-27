@@ -12,10 +12,12 @@
 ################################################################################
 # importações
 ################################################################################
+from pickle import NONE
 import cv2
 from src.objloader_simple import *
 import numpy as np
 import math
+import pyzbar.pyzbar as pyzbar
 
 ################################################################################
 # Lista de QR_Codes, aqui seria uma consulta no banco de dados
@@ -24,8 +26,11 @@ PATH_QRCODES = 'qrcode/'
 EXT_QRCODE = '*.png'
 PATH_MODELS = 'models/'
 EXT_MODELS = '*.obj'
-MIN_MATCHES = 35
-MIN_AREA = 5000
+MIN_MATCHES = 70
+MIN_AREA = 5
+SHAPE_FACTOR_MIN = 10
+SHAPE_FACTOR_MAX = 10000
+
 CAMERA_PARAMETERS = np.array(
     [[1000, 0, 320], [0, 1000, 240], [0, 0, 1]])  # Camera parameters
 
@@ -144,18 +149,12 @@ def render(img, obj, projection, model, proportion_3D=10, color=(80, 27, 211)):
     return img
 
 
-def detect(sourceImage, banco=banco_de_dados, camera_parameters=CAMERA_PARAMETERS):
-    sourceImagePts, sourceImageDsc = orb.detectAndCompute(sourceImage, None)
-    image_frame = sourceImage.copy()
-    array_info_detect = []
+def calcula_scores(banco, sourceImagePts, sourceImageDsc):
+    array_detect = []
     for item in banco:
         try:
             matches = detect_bf(item['referenceImageDsc'], sourceImageDsc)
-            # matches = detect_flann(item['referenceImageDsc'], sourceImageDsc)
-            # Apply the homography transformation if we have enough good matches
-            # print('matches', len(matches))
 
-            # if len(matches) >= MIN_MATCHES:
             # Get the good key points positions
             sourcePoints = np.float32(
                 [item['referenceImagePts'][m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
@@ -165,7 +164,6 @@ def detect(sourceImage, banco=banco_de_dados, camera_parameters=CAMERA_PARAMETER
             # Obtain the homography matrix
             homography, mask = cv2.findHomography(
                 sourcePoints, destinationPoints, cv2.RANSAC, 5.0)
-            # matchesMask = mask.ravel().tolist()
 
             # Apply the perspective transformation to the source image corners
             h, w = item['img'].shape
@@ -184,26 +182,153 @@ def detect(sourceImage, banco=banco_de_dados, camera_parameters=CAMERA_PARAMETER
                 transformedCorners, peri, True)  # 4 pontos
             area = cv2.contourArea(approx)  # Area muito pequena é ignorada
             shape_factor = area / (peri * peri)
-            # array_info_detect.append({'id': item['id'], 'matches': len(matches),'area': area, 'approx': len(approx), 'shape_factor': shape_factor})
-            
-            if area >= MIN_AREA and len(approx) == 4 and shape_factor >= 500 and shape_factor < 1000:
-                pts = [np.int32(approx)]
-                image_frame = cv2.polylines(
-                    sourceImage, pts, True, item['color'], 3, cv2.LINE_4)
+            approx_len = len(approx)
 
-                # image_frame = frame
-                # # obtain 3D projection matrix from homography matrix and camera parameters
-                projection = projection_matrix(
-                    camera_parameters, homography)
-                image_frame = render(
-                    image_frame, item['obj'], projection, item['img'], item['proportion_3D'], item['color'])
-
+            # pontos tem formato de quadrado, retangulo
+            if (approx_len == 4):
+                # print({'matches' : len(matches), 'area': area, 'approx_len': approx_len, 'approx': approx, 'shape': shape_factor, 'homography': homography})
+                array_detect.append({'item': item, 'matches': len(
+                    matches), 'area': area, 'approx_len': approx_len, 'approx': approx, 'shape': shape_factor, 'homography': homography})
         except Exception as e:
             print("erro: " + str(e))
-    
-    # print(array_info_detect)
-  
+    return array_detect
+
+
+def filter_better_score(array_detect):
+    better_item = {}
+    #  Nenhuma detecção
+    if (len(array_detect) == 0):
+        return NONE
+    #  Só uma detecção
+    better_item = array_detect.pop(0)
+    if (len(array_detect) == 0):
+        return better_item
+    # Procura o melhor resultado
+    for item in array_detect:
+        if (item['matches'] > better_item['matches']):
+            # if (item['shape'] >= SHAPE_FACTOR_MIN and item['shape'] < SHAPE_FACTOR_MAX):
+            if (item['area'] >= MIN_AREA and item['area'] >= better_item['area']):
+                better_item = item
+    return better_item
+
+
+def detect_by_text(decodedObject, banco):
+    for item in banco:
+        txtqr = decodedObject.data
+        detect = txtqr.find(item['link'].encode())
+        if detect > -1:
+            return item
+    return None
+
+
+def drawframe(frame, hull, decodedObject):
+    # Number of points in the convex hull
+    n = len(hull)
+    # Draw the convext hull
+    for j in range(0, n):
+        cv2.line(frame, hull[j], hull[(j+1) % n], (255, 0, 0), 3)
+    x = decodedObject.rect.left
+    y = decodedObject.rect.top
+    print(x, y)
+    print('Type : ', decodedObject.type)
+    print('Data : ', decodedObject.data, '\n')
+    barCode = str(decodedObject.data)
+    cv2.putText(frame, barCode, (x, y), cv2.FONT_HERSHEY_SIMPLEX,
+                1, (0, 255, 255), 2, cv2.LINE_AA)
+    return frame
+
+
+def detect(sourceImage, banco=banco_de_dados, camera_parameters=CAMERA_PARAMETERS):
+    sourceImagePts, sourceImageDsc = orb.detectAndCompute(sourceImage, None)
+    image_frame = sourceImage.copy()
+
+    img_gray = cv2.cvtColor(image_frame, cv2.COLOR_BGR2GRAY)
+    decodedObjects = pyzbar.decode(img_gray)
+    if (len(decodedObjects) > 0):
+        decodedObject = decodedObjects[0]
+        points = decodedObject.polygon
+        # If the points do not form a quad, find convex hull
+        if len(points) > 4:
+            hull = cv2.convexHull(
+                np.array([point for point in points], dtype=np.float32))
+            hull = list(map(tuple, np.squeeze(hull)))
+        else:
+            hull = points
+
+        image_frame = drawframe(image_frame, hull, decodedObject)
+
+        item = detect_by_text(decodedObject, banco)
+        if (item is not None):
+            try:
+                matches = detect_bf(item['referenceImageDsc'], sourceImageDsc)
+                # matches = detect_flann(item['referenceImageDsc'], sourceImageDsc)
+                # Apply the homography transformation if we have enough good matches
+                # print('matches', len(matches))
+                # Get the good key points positions
+                sourcePoints = np.float32(
+                    [item['referenceImagePts'][m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
+                destinationPoints = np.float32(
+                    [sourceImagePts[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
+                # Obtain the homography matrix
+                homography, mask = cv2.findHomography(
+                    sourcePoints, destinationPoints, cv2.RANSAC, 5.0)
+                # matchesMask = mask.ravel().tolist()
+                # Apply the perspective transformation to the source image corners
+                h, w = item['img'].shape
+                corners = np.float32(
+                    [[0, 0], [0, h - 1], [w - 1, h - 1], [w - 1, 0]]).reshape(-1, 1, 2)
+                # Draw a polygon on the second image joining the transformed corners
+                transformedCorners = cv2.perspectiveTransform(
+                    corners, homography)
+                ################################################################
+                # Evita detecções de QR code falsos ou muito pequenos.
+                ################################################################
+                peri = 0.01 * cv2.arcLength(transformedCorners, True)
+                approx = cv2.approxPolyDP(
+                    transformedCorners, peri, True)  # 4 pontos
+                area = cv2.contourArea(approx)  # Area muito pequena é ignorada
+                shape_factor = area / (peri * peri)
+
+                print(len(matches), area, shape_factor, len(approx))
+                if area >= MIN_AREA and len(approx) == 4 and shape_factor >= 500 and shape_factor < 1000:
+                    pts = [np.int32(approx)]
+                    image_frame = cv2.polylines(
+                        sourceImage, pts, True, item['color'], 3, cv2.LINE_4)
+
+                    # image_frame = frame
+                    # # obtain 3D projection matrix from homography matrix and camera parameters
+                    projection = projection_matrix(
+                        camera_parameters, homography)
+                    image_frame = render(
+                        image_frame, item['obj'], projection, item['img'], item['proportion_3D'], item['color'])
+            except Exception as e:
+                print("erro: " + str(e))
+
     return image_frame
+
+# def detect(sourceImage, banco=banco_de_dados, camera_parameters=CAMERA_PARAMETERS):
+#     sourceImagePts, sourceImageDsc = orb.detectAndCompute(sourceImage, None)
+#     image_frame = sourceImage.copy()
+#     data_array = calcula_scores(banco, sourceImagePts, sourceImageDsc)
+#     result = filter_better_score(data_array)
+#     print(result)
+#     if (result != None):
+#         try:
+#             pts = [np.int32(result['approx'])]
+#             image_frame = cv2.polylines(
+#                 sourceImage, pts, True, result['item']['color'], 3, cv2.LINE_4)
+
+#             # image_frame = frame
+#             # # obtain 3D projection matrix from homography matrix and camera parameters
+#             projection = projection_matrix(
+#                 camera_parameters, result['homography'])
+#             image_frame = render(
+#                 image_frame, result['item']['obj'], projection, result['item']['img'], result['item']['proportion_3D'], result['item']['color'])
+#         except Exception as e:
+#             print("erro: " + str(e))
+
+#     return image_frame
+
 
 # @audit Teste
 # # define a video capture object

@@ -1,9 +1,9 @@
-import os
+# import os
 import sys
 from time import sleep
-import cv2 
-import numpy as np
-import math
+# import cv2 
+# import numpy as np
+# import math
 from src.objloader_simple import  *
 
 # Iniciando a camera do hardware
